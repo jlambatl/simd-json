@@ -10,7 +10,16 @@ pub(crate) mod native;
 /// rust native implementation
 pub(crate) mod portable;
 
-#[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+#[cfg(all(
+    any(target_arch = "x86_64", target_arch = "x86"),
+    target_feature = "avx512f"
+))]
+pub(crate) mod avx512;
+
+#[cfg(all(
+    any(target_arch = "x86_64", target_arch = "x86"),
+    not(target_feature = "avx512f")
+))]
 pub(crate) mod avx2;
 
 #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]

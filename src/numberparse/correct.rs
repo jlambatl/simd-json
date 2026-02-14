@@ -9,7 +9,8 @@ use super::{is_made_of_eight_digits_fast, parse_eight_digits_unrolled};
 use crate::StaticNode;
 use crate::charutils::is_structural_or_whitespace;
 use crate::error::Error;
-use crate::macros::{static_cast_i64, unlikely};
+#[allow(unused_imports)]
+use crate::macros::static_cast_i64;
 use crate::safer_unchecked::GetSaferUnchecked;
 use crate::{Deserializer, ErrorType, Result};
 

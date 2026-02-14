@@ -44,7 +44,6 @@ mod numberparse;
 mod safer_unchecked;
 mod stringparse;
 
-use macros::static_cast_u64;
 use safer_unchecked::GetSaferUnchecked;
 use stage2::StackState;
 use tape::Value;
@@ -350,6 +349,8 @@ pub enum Implementation {
     SSE42,
     /// AVX2 implementation
     AVX2,
+    /// AVX512 implementation
+    AVX512,
     /// ARM NEON implementation
     NEON,
     /// WEBASM SIMD128 implementation
@@ -363,6 +364,7 @@ impl std::fmt::Display for Implementation {
             Implementation::StdSimd => write!(f, "std::simd"),
             Implementation::SSE42 => write!(f, "SSE42"),
             Implementation::AVX2 => write!(f, "AVX2"),
+            Implementation::AVX512 => write!(f, "AVX512"),
             Implementation::NEON => write!(f, "NEON"),
             Implementation::SIMD128 => write!(f, "SIMD128"),
         }
@@ -377,7 +379,9 @@ impl Deserializer<'_> {
     ))]
     #[must_use]
     pub fn algorithm() -> Implementation {
-        if std::is_x86_feature_detected!("avx2") {
+        if std::is_x86_feature_detected!("avx512f") {
+            Implementation::AVX512
+        } else if std::is_x86_feature_detected!("avx2") {
             Implementation::AVX2
         } else if std::is_x86_feature_detected!("sse4.2") {
             Implementation::SSE42
@@ -395,6 +399,7 @@ impl Deserializer<'_> {
             any(target_arch = "x86_64", target_arch = "x86")
         ),
         feature = "portable",
+        target_feature = "avx512f",
         target_feature = "avx2",
         target_feature = "sse4.2",
         target_feature = "simd128",
@@ -413,7 +418,19 @@ impl Deserializer<'_> {
     }
 
     #[cfg(all(
+        target_feature = "avx512f",
+        not(feature = "portable"),
+        not(feature = "runtime-detection"),
+    ))]
+    /// returns the algorithm / architecture used by the deserializer
+    #[must_use]
+    pub fn algorithm() -> Implementation {
+        Implementation::AVX512
+    }
+
+    #[cfg(all(
         target_feature = "avx2",
+        not(target_feature = "avx512f"),
         not(feature = "portable"),
         not(feature = "runtime-detection"),
     ))]
@@ -425,6 +442,7 @@ impl Deserializer<'_> {
 
     #[cfg(all(
         target_feature = "sse4.2",
+        not(target_feature = "avx512f"),
         not(target_feature = "avx2"),
         not(feature = "runtime-detection"),
         not(feature = "portable"),
@@ -472,7 +490,9 @@ impl<'de> Deserializer<'de> {
 
             #[cfg_attr(not(feature = "no-inline"), inline)]
             fn get_fastest_available_implementation() -> ParseStrFn {
-                if std::is_x86_feature_detected!("avx2") {
+                if std::is_x86_feature_detected!("avx512f") {
+                    impls::avx512::parse_str
+                } else if std::is_x86_feature_detected!("avx2") {
                     impls::avx2::parse_str
                 } else if std::is_x86_feature_detected!("sse4.2") {
                     impls::sse42::parse_str
@@ -514,6 +534,7 @@ impl<'de> Deserializer<'de> {
             any(target_arch = "x86_64", target_arch = "x86")
         ),
         feature = "portable",
+        target_feature = "avx512f",
         target_feature = "avx2",
         target_feature = "sse4.2",
         target_feature = "simd128",
@@ -548,7 +569,24 @@ impl<'de> Deserializer<'de> {
 
     #[cfg_attr(not(feature = "no-inline"), inline)]
     #[cfg(all(
+        target_feature = "avx512f",
+        not(feature = "portable"),
+        not(feature = "runtime-detection"),
+    ))]
+    pub(crate) unsafe fn parse_str_<'invoke>(
+        input: *mut u8,
+        data: &'invoke [u8],
+        buffer: &'invoke mut [u8],
+        idx: usize,
+    ) -> Result<&'de str> {
+        let input: SillyWrapper<'de> = SillyWrapper::from(input);
+        unsafe { impls::avx512::parse_str(input, data, buffer, idx) }
+    }
+
+    #[cfg_attr(not(feature = "no-inline"), inline)]
+    #[cfg(all(
         target_feature = "avx2",
+        not(target_feature = "avx512f"),
         not(feature = "portable"),
         not(feature = "runtime-detection"),
     ))]
@@ -565,6 +603,7 @@ impl<'de> Deserializer<'de> {
     #[cfg_attr(not(feature = "no-inline"), inline)]
     #[cfg(all(
         target_feature = "sse4.2",
+        not(target_feature = "avx512f"),
         not(target_feature = "avx2"),
         not(feature = "runtime-detection"),
         not(feature = "portable"),
@@ -621,7 +660,9 @@ impl Deserializer<'_> {
 
             #[cfg_attr(not(feature = "no-inline"), inline)]
             fn get_fastest_available_implementation() -> FindStructuralBitsFn {
-                if std::is_x86_feature_detected!("avx2") {
+                if std::is_x86_feature_detected!("avx512f") {
+                    Deserializer::_find_structural_bits::<impls::avx512::SimdInput>
+                } else if std::is_x86_feature_detected!("avx2") {
                     Deserializer::_find_structural_bits::<impls::avx2::SimdInput>
                 } else if std::is_x86_feature_detected!("sse4.2") {
                     Deserializer::_find_structural_bits::<impls::sse42::SimdInput>
@@ -657,6 +698,7 @@ impl Deserializer<'_> {
             any(target_arch = "x86_64", target_arch = "x86")
         ),
         feature = "portable",
+        target_feature = "avx512f",
         target_feature = "avx2",
         target_feature = "sse4.2",
         target_feature = "simd128",
@@ -691,7 +733,21 @@ impl Deserializer<'_> {
     }
 
     #[cfg(all(
+        target_feature = "avx512f",
+        not(feature = "portable"),
+        not(feature = "runtime-detection"),
+    ))]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
+    pub(crate) unsafe fn find_structural_bits(
+        input: &[u8],
+        structural_indexes: &mut Vec<u32>,
+    ) -> std::result::Result<(), ErrorType> {
+        unsafe { Self::_find_structural_bits::<impls::avx512::SimdInput>(input, structural_indexes) }
+    }
+
+    #[cfg(all(
         target_feature = "avx2",
+        not(target_feature = "avx512f"),
         not(feature = "portable"),
         not(feature = "runtime-detection"),
     ))]
@@ -705,6 +761,7 @@ impl Deserializer<'_> {
 
     #[cfg(all(
         target_feature = "sse4.2",
+        not(target_feature = "avx512f"),
         not(target_feature = "avx2"),
         not(feature = "runtime-detection"),
         not(feature = "portable"),
